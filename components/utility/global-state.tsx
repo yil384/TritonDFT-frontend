@@ -77,7 +77,7 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   const [userInput, setUserInput] = useState<string>("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
-    model: "gpt-4-turbo-preview",
+    model: "dft-1",
     prompt: "You are a helpful AI assistant.",
     temperature: 0.5,
     contextLength: 4000,
@@ -194,6 +194,36 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
       }
 
       return profile
+    } else {
+      // 如果没有 session，创建一个默认的匿名 profile
+      const defaultProfile = {
+        id: "00000000-0000-0000-0000-000000000000",
+        user_id: "00000000-0000-0000-0000-000000000000",
+        username: "anonymous",
+        display_name: "Anonymous User",
+        bio: "",
+        profile_context: "",
+        image_url: "",
+        image_path: "",
+        has_onboarded: true,
+        anthropic_api_key: "",
+        azure_openai_35_turbo_id: "",
+        azure_openai_45_turbo_id: "",
+        azure_openai_45_vision_id: "",
+        azure_openai_api_key: "",
+        azure_openai_endpoint: "",
+        google_gemini_api_key: "",
+        mistral_api_key: "",
+        openai_api_key: "",
+        openai_organization_id: "",
+        perplexity_api_key: "",
+        use_azure_openai: false,
+        created_at: new Date().toISOString(),
+        updated_at: null
+      } as Tables<"profiles">
+
+      setProfile(defaultProfile)
+      return defaultProfile
     }
   }
 

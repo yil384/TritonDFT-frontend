@@ -32,9 +32,7 @@ export const Dashboard: FC<DashboardProps> = ({ children }) => {
   const [contentType, setContentType] = useState<ContentType>(
     tabValue as ContentType
   )
-  const [showSidebar, setShowSidebar] = useState(
-    localStorage.getItem("showSidebar") === "true"
-  )
+  const [showSidebar, setShowSidebar] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
 
   const onFileDrop = (event: React.DragEvent<HTMLDivElement>) => {

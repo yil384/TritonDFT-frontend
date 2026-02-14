@@ -11,13 +11,15 @@ import { convertBlobToBase64 } from "@/lib/blob-to-b64"
 import useHotkey from "@/lib/hooks/use-hotkey"
 import { LLMID, MessageImage } from "@/types"
 import { useParams } from "next/navigation"
-import { FC, useContext, useEffect, useState } from "react"
+import { FC, useContext, useEffect, useState, useMemo } from "react"
 import { ChatHelp } from "./chat-help"
 import { useScroll } from "./chat-hooks/use-scroll"
 import { ChatInput } from "./chat-input"
 import { ChatMessages } from "./chat-messages"
 import { ChatScrollButtons } from "./chat-scroll-buttons"
 import { ChatSecondaryButtons } from "./chat-secondary-buttons"
+import { DFTAgentBlock } from "@/components/messages/dft-agent-block"
+import { IconChevronRight } from "@tabler/icons-react"
 
 interface ChatUIProps {}
 
@@ -28,6 +30,7 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
 
   const {
     setChatMessages,
+    chatMessages,
     selectedChat,
     setSelectedChat,
     setChatSettings,
@@ -38,7 +41,8 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
     setChatFiles,
     setShowFilesDisplay,
     setUseRetrieval,
-    setSelectedTools
+    setSelectedTools,
+    isGenerating
   } = useContext(ChatbotUIContext)
 
   const { handleNewChat, handleFocusChatInput } = useChatHandler()
@@ -181,49 +185,134 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
     })
   }
 
+  const [showSidePanel, setShowSidePanel] = useState(true)
+  const [panelWidth, setPanelWidth] = useState(450)
+  const [isResizing, setIsResizing] = useState(false)
+
+  const MIN_WIDTH_TO_COLLAPSE = 100
+  const DEFAULT_WIDTH = 450
+
+  // Handle resize
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      const newWidth = e.clientX
+
+      // Collapse if dragged below threshold
+      if (newWidth < MIN_WIDTH_TO_COLLAPSE) {
+        setShowSidePanel(false)
+        setPanelWidth(DEFAULT_WIDTH)
+      } else {
+        setShowSidePanel(true)
+        setPanelWidth(Math.min(700, newWidth))
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isResizing])
+
+  // Get all assistant message content combined for DFTAgentBlock
+  const combinedAssistantContent = useMemo(() => {
+    return chatMessages
+      .filter(cm => cm.message.role === "assistant")
+      .map(cm => cm.message.content)
+      .join("\n")
+  }, [chatMessages])
+
   if (loading) {
     return <Loading />
   }
 
   return (
-    <div className="relative flex h-full flex-col items-center">
-      <div className="absolute left-4 top-2.5 flex justify-center">
-        <ChatScrollButtons
-          isAtTop={isAtTop}
-          isAtBottom={isAtBottom}
-          isOverflowing={isOverflowing}
-          scrollToTop={scrollToTop}
-          scrollToBottom={scrollToBottom}
-        />
-      </div>
-
-      <div className="absolute right-4 top-1 flex h-[40px] items-center space-x-2">
-        <ChatSecondaryButtons />
-      </div>
-
-      <div className="bg-secondary flex max-h-[50px] min-h-[50px] w-full items-center justify-center border-b-2 font-bold">
-        <div className="max-w-[200px] truncate sm:max-w-[400px] md:max-w-[500px] lg:max-w-[600px] xl:max-w-[700px]">
-          {selectedChat?.name || "Chat"}
+    <div className="flex size-full">
+      {/* Left collapsible workflow panel - using DFTAgentBlock */}
+      {showSidePanel && (
+        <div
+          className="flex h-full shrink-0 flex-col overflow-y-auto bg-zinc-900"
+          style={{ width: `${panelWidth}px` }}
+        >
+          <div className="p-4">
+            {/* DFTAgentBlock for workflow visualization */}
+            {combinedAssistantContent ? (
+              <DFTAgentBlock content={combinedAssistantContent} />
+            ) : (
+              <div className="py-8 text-center text-sm text-zinc-400">
+                Start a conversation to see workflow progress here.
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* Resize handle - always visible as a border between panels */}
       <div
-        className="flex size-full flex-col overflow-auto border-b"
-        onScroll={handleScroll}
+        className={`flex h-full w-1.5 shrink-0 cursor-col-resize items-center justify-center transition-colors ${
+          isResizing ? "bg-green-500" : "bg-zinc-700 hover:bg-green-500"
+        }`}
+        onMouseDown={handleMouseDown}
       >
-        <div ref={messagesStartRef} />
-
-        <ChatMessages />
-
-        <div ref={messagesEndRef} />
+        {!showSidePanel && (
+          <IconChevronRight size={14} className="text-zinc-400" />
+        )}
       </div>
 
-      <div className="relative w-full min-w-[300px] items-end px-2 pb-3 pt-0 sm:w-[600px] sm:pb-8 sm:pt-5 md:w-[700px] lg:w-[700px] xl:w-[800px]">
-        <ChatInput />
-      </div>
+      {/* Chat content area */}
+      <div className="relative flex h-full flex-1 flex-col items-center">
+        <div className="absolute left-4 top-2.5 flex justify-center">
+          <ChatScrollButtons
+            isAtTop={isAtTop}
+            isAtBottom={isAtBottom}
+            isOverflowing={isOverflowing}
+            scrollToTop={scrollToTop}
+            scrollToBottom={scrollToBottom}
+          />
+        </div>
 
-      <div className="absolute bottom-2 right-2 hidden md:block lg:bottom-4 lg:right-4">
-        <ChatHelp />
+        <div className="absolute right-4 top-1 flex h-[40px] items-center space-x-2">
+          <ChatSecondaryButtons />
+        </div>
+
+        <div className="bg-secondary flex max-h-[50px] min-h-[50px] w-full items-center justify-center border-b-2 font-bold">
+          <div className="max-w-[200px] truncate sm:max-w-[400px] md:max-w-[500px] lg:max-w-[600px] xl:max-w-[700px]">
+            {selectedChat?.name || "Chat"}
+          </div>
+        </div>
+
+        <div
+          className="flex size-full flex-col overflow-auto border-b"
+          onScroll={handleScroll}
+        >
+          <div ref={messagesStartRef} />
+
+          <ChatMessages />
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="relative w-full min-w-[300px] items-end px-2 pb-3 pt-0 sm:w-[600px] sm:pb-8 sm:pt-5 md:w-[700px] lg:w-[700px] xl:w-[800px]">
+          <ChatInput />
+        </div>
+
+        <div className="absolute bottom-2 right-2 hidden md:block lg:bottom-4 lg:right-4">
+          <ChatHelp />
+        </div>
       </div>
     </div>
   )

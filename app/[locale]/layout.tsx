@@ -25,6 +25,9 @@ interface RootLayoutProps {
 }
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://www.tritondft.com"
+  ),
   applicationName: APP_NAME,
   title: {
     default: APP_DEFAULT_TITLE,
@@ -97,7 +100,7 @@ export default async function RootLayout({
           >
             <Toaster richColors position="top-center" duration={3000} />
             <div className="bg-background text-foreground flex h-dvh flex-col items-center overflow-x-auto">
-              {session ? <GlobalState>{children}</GlobalState> : children}
+              <GlobalState>{children}</GlobalState>
             </div>
           </TranslationsProvider>
         </Providers>

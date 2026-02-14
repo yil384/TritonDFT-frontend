@@ -61,13 +61,8 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
 
   useEffect(() => {
     ;(async () => {
-      const session = (await supabase.auth.getSession()).data.session
-
-      if (!session) {
-        return router.push("/login")
-      } else {
-        await fetchWorkspaceData(workspaceId)
-      }
+      // 跳过登录检查，直接加载工作区数据
+      await fetchWorkspaceData(workspaceId)
     })()
   }, [])
 
@@ -91,75 +86,116 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   const fetchWorkspaceData = async (workspaceId: string) => {
     setLoading(true)
 
-    const workspace = await getWorkspaceById(workspaceId)
-    setSelectedWorkspace(workspace)
-
-    const assistantData = await getAssistantWorkspacesByWorkspaceId(workspaceId)
-    setAssistants(assistantData.assistants)
-
-    for (const assistant of assistantData.assistants) {
-      let url = ""
-
-      if (assistant.image_path) {
-        url = (await getAssistantImageFromStorage(assistant.image_path)) || ""
-      }
-
-      if (url) {
-        const response = await fetch(url)
-        const blob = await response.blob()
-        const base64 = await convertBlobToBase64(blob)
-
-        setAssistantImages(prev => [
-          ...prev,
-          {
-            assistantId: assistant.id,
-            path: assistant.image_path,
-            base64,
-            url
-          }
-        ])
-      } else {
-        setAssistantImages(prev => [
-          ...prev,
-          {
-            assistantId: assistant.id,
-            path: assistant.image_path,
-            base64: "",
-            url
-          }
-        ])
-      }
+    let workspace
+    try {
+      workspace = await getWorkspaceById(workspaceId)
+      setSelectedWorkspace(workspace)
+    } catch (error) {
+      // 如果工作区不存在，创建一个默认的工作区对象
+      console.warn("Workspace not found, using default workspace:", error)
+      workspace = {
+        id: workspaceId,
+        name: "Default Workspace",
+        description: "Default workspace",
+        default_context_length: 4096,
+        default_model: "dft-1",
+        default_prompt: "You are a friendly, helpful AI assistant.",
+        default_temperature: 0.5,
+        include_profile_context: true,
+        include_workspace_instructions: true,
+        embeddings_provider: "openai",
+        instructions: "",
+        is_home: false,
+        sharing: "private",
+        user_id: "",
+        created_at: new Date().toISOString(),
+        updated_at: null,
+        image_path: ""
+      } as any
+      setSelectedWorkspace(workspace)
     }
 
-    const chats = await getChatsByWorkspaceId(workspaceId)
-    setChats(chats)
+    try {
+      const assistantData =
+        await getAssistantWorkspacesByWorkspaceId(workspaceId)
+      setAssistants(assistantData.assistants)
 
-    const collectionData =
-      await getCollectionWorkspacesByWorkspaceId(workspaceId)
-    setCollections(collectionData.collections)
+      for (const assistant of assistantData.assistants) {
+        let url = ""
 
-    const folders = await getFoldersByWorkspaceId(workspaceId)
-    setFolders(folders)
+        if (assistant.image_path) {
+          url = (await getAssistantImageFromStorage(assistant.image_path)) || ""
+        }
 
-    const fileData = await getFileWorkspacesByWorkspaceId(workspaceId)
-    setFiles(fileData.files)
+        if (url) {
+          const response = await fetch(url)
+          const blob = await response.blob()
+          const base64 = await convertBlobToBase64(blob)
 
-    const presetData = await getPresetWorkspacesByWorkspaceId(workspaceId)
-    setPresets(presetData.presets)
+          setAssistantImages(prev => [
+            ...prev,
+            {
+              assistantId: assistant.id,
+              path: assistant.image_path,
+              base64,
+              url
+            }
+          ])
+        } else {
+          setAssistantImages(prev => [
+            ...prev,
+            {
+              assistantId: assistant.id,
+              path: assistant.image_path,
+              base64: "",
+              url
+            }
+          ])
+        }
+      }
 
-    const promptData = await getPromptWorkspacesByWorkspaceId(workspaceId)
-    setPrompts(promptData.prompts)
+      const chats = await getChatsByWorkspaceId(workspaceId)
+      setChats(chats)
 
-    const toolData = await getToolWorkspacesByWorkspaceId(workspaceId)
-    setTools(toolData.tools)
+      const collectionData =
+        await getCollectionWorkspacesByWorkspaceId(workspaceId)
+      setCollections(collectionData.collections)
 
-    const modelData = await getModelWorkspacesByWorkspaceId(workspaceId)
-    setModels(modelData.models)
+      const folders = await getFoldersByWorkspaceId(workspaceId)
+      setFolders(folders)
+
+      const fileData = await getFileWorkspacesByWorkspaceId(workspaceId)
+      setFiles(fileData.files)
+
+      const presetData = await getPresetWorkspacesByWorkspaceId(workspaceId)
+      setPresets(presetData.presets)
+
+      const promptData = await getPromptWorkspacesByWorkspaceId(workspaceId)
+      setPrompts(promptData.prompts)
+
+      const toolData = await getToolWorkspacesByWorkspaceId(workspaceId)
+      setTools(toolData.tools)
+
+      const modelData = await getModelWorkspacesByWorkspaceId(workspaceId)
+      setModels(modelData.models)
+    } catch (error) {
+      // 如果其他数据加载失败，使用空数组
+      console.warn("Error loading workspace data:", error)
+      setAssistants([])
+      setChats([])
+      setCollections([])
+      setFolders([])
+      setFiles([])
+      setPresets([])
+      setPrompts([])
+      setTools([])
+      setModels([])
+    }
 
     setChatSettings({
       model: (searchParams.get("model") ||
         workspace?.default_model ||
-        "gpt-4-1106-preview") as LLMID,
+        "dft-1") as LLMID,
       prompt:
         workspace?.default_prompt ||
         "You are a friendly, helpful AI assistant.",

@@ -38,8 +38,12 @@ export const validateChatSettings = (
     throw new Error("Model not found")
   }
 
+  // 如果没有 profile，记录警告但不抛出错误
+  // GlobalState 应该已经设置了默认的匿名 profile
   if (!profile) {
-    throw new Error("Profile not found")
+    console.warn(
+      "Profile not found, chat may not work correctly without authentication"
+    )
   }
 
   if (!selectedWorkspace) {
@@ -208,9 +212,12 @@ export const handleHostedChat = async (
 
   let draftMessages = await buildFinalMessages(payload, profile, chatImages)
 
-  let formattedMessages : any[] = []
+  let formattedMessages: any[] = []
   if (provider === "google") {
-    formattedMessages = await adaptMessagesForGoogleGemini(payload, draftMessages)
+    formattedMessages = await adaptMessagesForGoogleGemini(
+      payload,
+      draftMessages
+    )
   } else {
     formattedMessages = draftMessages
   }
@@ -354,34 +361,72 @@ export const handleCreateChat = async (
   setChats: React.Dispatch<React.SetStateAction<Tables<"chats">[]>>,
   setChatFiles: React.Dispatch<React.SetStateAction<ChatFile[]>>
 ) => {
-  const createdChat = await createChat({
-    user_id: profile.user_id,
-    workspace_id: selectedWorkspace.id,
-    assistant_id: selectedAssistant?.id || null,
-    context_length: chatSettings.contextLength,
-    include_profile_context: chatSettings.includeProfileContext,
-    include_workspace_instructions: chatSettings.includeWorkspaceInstructions,
-    model: chatSettings.model,
-    name: messageContent.substring(0, 100),
-    prompt: chatSettings.prompt,
-    temperature: chatSettings.temperature,
-    embeddings_provider: chatSettings.embeddingsProvider
-  })
-
-  setSelectedChat(createdChat)
-  setChats(chats => [createdChat, ...chats])
-
-  await createChatFiles(
-    newMessageFiles.map(file => ({
+  try {
+    const createdChat = await createChat({
       user_id: profile.user_id,
-      chat_id: createdChat.id,
-      file_id: file.id
-    }))
-  )
+      workspace_id: selectedWorkspace.id,
+      assistant_id: selectedAssistant?.id || null,
+      context_length: chatSettings.contextLength,
+      include_profile_context: chatSettings.includeProfileContext,
+      include_workspace_instructions: chatSettings.includeWorkspaceInstructions,
+      model: chatSettings.model,
+      name: messageContent.substring(0, 100),
+      prompt: chatSettings.prompt,
+      temperature: chatSettings.temperature,
+      embeddings_provider: chatSettings.embeddingsProvider
+    })
 
-  setChatFiles(prev => [...prev, ...newMessageFiles])
+    setSelectedChat(createdChat)
+    setChats(chats => [createdChat, ...chats])
 
-  return createdChat
+    try {
+      await createChatFiles(
+        newMessageFiles.map(file => ({
+          user_id: profile.user_id,
+          chat_id: createdChat.id,
+          file_id: file.id
+        }))
+      )
+    } catch (error) {
+      console.warn(
+        "Failed to create chat files (may be anonymous user):",
+        error
+      )
+    }
+
+    setChatFiles(prev => [...prev, ...newMessageFiles])
+
+    return createdChat
+  } catch (error) {
+    // 如果是匿名用户，创建一个临时的 chat 对象（只在前端使用）
+    console.warn(
+      "Failed to create chat in database (may be anonymous user), using temporary chat:",
+      error
+    )
+    const tempChat = {
+      id: `temp-${Date.now()}`,
+      user_id: profile.user_id,
+      workspace_id: selectedWorkspace.id,
+      assistant_id: selectedAssistant?.id || null,
+      context_length: chatSettings.contextLength,
+      include_profile_context: chatSettings.includeProfileContext,
+      include_workspace_instructions: chatSettings.includeWorkspaceInstructions,
+      model: chatSettings.model,
+      name: messageContent.substring(0, 100),
+      prompt: chatSettings.prompt,
+      temperature: chatSettings.temperature,
+      embeddings_provider: chatSettings.embeddingsProvider,
+      sharing: "private" as const,
+      created_at: new Date().toISOString(),
+      updated_at: null
+    } as Tables<"chats">
+
+    setSelectedChat(tempChat)
+    setChats(chats => [tempChat, ...chats])
+    setChatFiles(prev => [...prev, ...newMessageFiles])
+
+    return tempChat
+  }
 }
 
 export const handleCreateMessages = async (
@@ -428,10 +473,20 @@ export const handleCreateMessages = async (
   if (isRegeneration) {
     const lastStartingMessage = chatMessages[chatMessages.length - 1].message
 
-    const updatedMessage = await updateMessage(lastStartingMessage.id, {
-      ...lastStartingMessage,
-      content: generatedText
-    })
+    let updatedMessage
+    try {
+      updatedMessage = await updateMessage(lastStartingMessage.id, {
+        ...lastStartingMessage,
+        content: generatedText
+      })
+    } catch (error) {
+      // 如果是临时消息，直接更新本地状态
+      console.warn("Failed to update message (may be anonymous user):", error)
+      updatedMessage = {
+        ...lastStartingMessage,
+        content: generatedText
+      } as Tables<"messages">
+    }
 
     chatMessages[chatMessages.length - 1].message = updatedMessage
 
@@ -439,52 +494,96 @@ export const handleCreateMessages = async (
 
     setChatMessages(finalChatMessages)
   } else {
-    const createdMessages = await createMessages([
-      finalUserMessage,
-      finalAssistantMessage
-    ])
+    let createdMessages
+    try {
+      createdMessages = await createMessages([
+        finalUserMessage,
+        finalAssistantMessage
+      ])
+    } catch (error) {
+      // 如果是匿名用户，创建临时的 message 对象（只在前端使用）
+      console.warn(
+        "Failed to create messages in database (may be anonymous user), using temporary messages:",
+        error
+      )
+      createdMessages = [
+        {
+          ...finalUserMessage,
+          id: `temp-user-${Date.now()}`,
+          created_at: new Date().toISOString(),
+          updated_at: null
+        },
+        {
+          ...finalAssistantMessage,
+          id: `temp-assistant-${Date.now()}`,
+          created_at: new Date().toISOString(),
+          updated_at: null
+        }
+      ] as Tables<"messages">[]
+    }
 
     // Upload each image (stored in newMessageImages) for the user message to message_images bucket
-    const uploadPromises = newMessageImages
-      .filter(obj => obj.file !== null)
-      .map(obj => {
-        let filePath = `${profile.user_id}/${currentChat.id}/${
-          createdMessages[0].id
-        }/${uuidv4()}`
+    let paths: string[] = []
+    try {
+      const uploadPromises = newMessageImages
+        .filter(obj => obj.file !== null)
+        .map(obj => {
+          let filePath = `${profile.user_id}/${currentChat.id}/${
+            createdMessages[0].id
+          }/${uuidv4()}`
 
-        return uploadMessageImage(filePath, obj.file as File).catch(error => {
-          console.error(`Failed to upload image at ${filePath}:`, error)
-          return null
+          return uploadMessageImage(filePath, obj.file as File).catch(error => {
+            console.error(`Failed to upload image at ${filePath}:`, error)
+            return null
+          })
         })
-      })
 
-    const paths = (await Promise.all(uploadPromises)).filter(
-      Boolean
-    ) as string[]
+      paths = (await Promise.all(uploadPromises)).filter(Boolean) as string[]
+    } catch (error) {
+      console.warn("Failed to upload images (may be anonymous user):", error)
+    }
 
     setChatImages(prevImages => [
       ...prevImages,
       ...newMessageImages.map((obj, index) => ({
         ...obj,
         messageId: createdMessages[0].id,
-        path: paths[index]
+        path: paths[index] || ""
       }))
     ])
 
-    const updatedMessage = await updateMessage(createdMessages[0].id, {
-      ...createdMessages[0],
-      image_paths: paths
-    })
-
-    const createdMessageFileItems = await createMessageFileItems(
-      retrievedFileItems.map(fileItem => {
-        return {
-          user_id: profile.user_id,
-          message_id: createdMessages[1].id,
-          file_item_id: fileItem.id
-        }
+    let updatedMessage = createdMessages[0]
+    try {
+      updatedMessage = await updateMessage(createdMessages[0].id, {
+        ...createdMessages[0],
+        image_paths: paths
       })
-    )
+    } catch (error) {
+      // 如果是临时消息，直接使用原消息
+      console.warn("Failed to update message (may be anonymous user):", error)
+      updatedMessage = {
+        ...createdMessages[0],
+        image_paths: paths
+      } as Tables<"messages">
+    }
+
+    let createdMessageFileItems = []
+    try {
+      createdMessageFileItems = await createMessageFileItems(
+        retrievedFileItems.map(fileItem => {
+          return {
+            user_id: profile.user_id,
+            message_id: createdMessages[1].id,
+            file_item_id: fileItem.id
+          }
+        })
+      )
+    } catch (error) {
+      console.warn(
+        "Failed to create message file items (may be anonymous user):",
+        error
+      )
+    }
 
     finalChatMessages = [
       ...chatMessages,
