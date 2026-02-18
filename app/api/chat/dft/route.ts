@@ -2,12 +2,14 @@ import { StreamingTextResponse } from "ai"
 
 export const runtime = "edge"
 
+const DFT_BACKEND_URL = process.env.DFT_BACKEND_URL || "http://localhost:8000"
+
 export async function POST(request: Request) {
   const json = await request.json()
   const { messages } = json
 
   try {
-    const response = await fetch("http://localhost:8000/v1/chat/completions", {
+    const response = await fetch(`${DFT_BACKEND_URL}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

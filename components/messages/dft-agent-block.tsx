@@ -9,6 +9,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconArrowDown,
+  IconAtom,
   IconBolt,
   IconCpu,
   IconFlask
@@ -237,6 +238,19 @@ export const DFTAgentBlock = ({ content }: { content: string }) => {
 
   return (
     <div className="flex w-full select-none flex-col gap-5 font-sans">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-zinc-700/50 pb-2">
+        <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
+          <IconAtom size={20} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-100">DFT Workflow</h2>
+          <p className="text-[11px] text-zinc-500">
+            Automated computation pipeline
+          </p>
+        </div>
+      </div>
+
       {/* Status Cards */}
       <div className="space-y-3">
         <PhaseCard
